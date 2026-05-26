@@ -1,0 +1,32 @@
+appId: com.vfx.audio-manager
+productName: VFX Audio Manager
+copyright: Copyright © 2024 Richard29
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - package.json
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  signAndEditExecutable: false
+  # icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: VFX Audio Manager
+
+asar: false
+npmRebuild: false
+electronDist: node_modules/electron/dist
+compression: maximum
