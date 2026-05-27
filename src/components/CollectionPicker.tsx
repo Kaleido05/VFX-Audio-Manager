@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
-import { HiXMark, HiFolderPlus, HiFolder } from 'react-icons/hi2';
+import { HiXMark, HiFolderPlus, HiFolder, HiCheck } from 'react-icons/hi2';
 import CreateCollectionDialog from './CreateCollectionDialog';
 
 interface CollectionPickerProps {
@@ -40,9 +40,13 @@ export default function CollectionPicker({
     <>
       <div
         className="fixed inset-0 z-40 bg-black/50"
-        onClick={onClose}
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
       />
-      <div className="fixed left-1/2 top-1/2 z-50 w-80 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-surface-600 bg-surface-800 shadow-2xl">
+      {/* stopPropagation prevents clicks from bubbling to AudioCard's onClick */}
+      <div
+        className="fixed left-1/2 top-1/2 z-50 w-80 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-surface-600 bg-surface-800 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-surface-700 px-5 py-4">
           <div className="min-w-0 flex-1">
@@ -54,7 +58,7 @@ export default function CollectionPicker({
             </p>
           </div>
           <button
-            onClick={onClose}
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
             className="shrink-0 rounded-lg p-1.5 text-surface-500 hover:bg-surface-700 hover:text-primary"
           >
             <HiXMark className="h-4 w-4" />
@@ -113,14 +117,21 @@ export default function CollectionPicker({
           )}
         </div>
 
-        {/* Create new */}
-        <div className="border-t border-surface-700 px-4 py-3">
+        {/* Actions */}
+        <div className="border-t border-surface-700 px-4 py-3 flex gap-2">
           <button
             onClick={() => setShowCreate(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-surface-600 px-4 py-2 text-xs text-surface-400 transition-all hover:border-accent-600 hover:text-accent-500"
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-dashed border-surface-600 px-4 py-2 text-xs text-surface-400 transition-all hover:border-accent-600 hover:text-accent-500"
           >
             <HiFolderPlus className="h-4 w-4" />
             新建收藏夹
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            className="flex items-center justify-center gap-1.5 rounded-lg bg-accent-600 px-4 py-2 text-xs font-medium text-white transition-all hover:bg-accent-500"
+          >
+            <HiCheck className="h-4 w-4" />
+            完成
           </button>
         </div>
       </div>

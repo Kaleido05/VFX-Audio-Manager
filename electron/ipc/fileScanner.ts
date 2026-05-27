@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron';
+import { ipcMain, dialog, BrowserWindow, shell, clipboard } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import * as musicMetadata from 'music-metadata';
@@ -15,25 +15,19 @@ interface AudioFileInfo {
   size: number;
   format: string;
   duration?: number;
+  relativeDir: string;
 }
 
 interface ScanResult {
   files: AudioFileInfo[];
   totalFolders: number;
+  subdirectories: string[];
   errors: string[];
 }
 
 function isAudioFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
   return AUDIO_EXTENSIONS.has(ext);
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const k = 1024;
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${units[i]}`;
 }
 
 async function readDurationBatch(files: AudioFileInfo[], batchSize = 8): Promise<void> {
@@ -62,10 +56,12 @@ function scanDirectoryRecursive(
   dirPath: string,
   results: AudioFileInfo[],
   errors: string[],
-  folderCount: { value: number }
+  folderCount: { value: number },
+  rootDir: string
 ): void {
   try {
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const relativeDir = path.relative(rootDir, dirPath).replace(/\\/g, '/');
 
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
@@ -73,7 +69,7 @@ function scanDirectoryRecursive(
       try {
         if (entry.isDirectory()) {
           folderCount.value++;
-          scanDirectoryRecursive(fullPath, results, errors, folderCount);
+          scanDirectoryRecursive(fullPath, results, errors, folderCount, rootDir);
         } else if (entry.isFile() && isAudioFile(fullPath)) {
           const stats = fs.statSync(fullPath);
           results.push({
@@ -81,6 +77,7 @@ function scanDirectoryRecursive(
             path: fullPath,
             size: stats.size,
             format: path.extname(fullPath).toLowerCase().replace('.', ''),
+            relativeDir,
           });
         }
       } catch (entryErr) {
@@ -120,10 +117,13 @@ export function registerFileScannerHandlers(): void {
         return { files: [], totalFolders: 0, errors: ['所选路径不是文件夹'] };
       }
 
-      scanDirectoryRecursive(folderPath, files, errors, folderCount);
+      scanDirectoryRecursive(folderPath, files, errors, folderCount, folderPath);
 
       // Sort by name
       files.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Derive subdirectory list
+      const subdirectories = [...new Set(files.map(f => f.relativeDir).filter(d => d !== ''))].sort();
 
       // Read audio durations in parallel batches
       if (files.length > 0) {
@@ -133,6 +133,7 @@ export function registerFileScannerHandlers(): void {
       return {
         files,
         totalFolders: folderCount.value,
+        subdirectories,
         errors,
       } as ScanResult;
     } catch (err) {
@@ -140,23 +141,21 @@ export function registerFileScannerHandlers(): void {
       return {
         files: [],
         totalFolders: 0,
+        subdirectories: [],
         errors: [`扫描失败: ${message}`],
       } as ScanResult;
     }
   });
 
-  ipcMain.handle('file:getAudioDuration', async (_event, filePath: string) => {
-    try {
-      const meta = await musicMetadata.parseFile(filePath, {
-        duration: true,
-        skipCovers: true,
-        skipPostHeaders: true,
-      });
-      return (meta.format.duration && meta.format.duration > 0)
-        ? meta.format.duration
-        : 0;
-    } catch {
-      return 0;
-    }
+  ipcMain.handle('shell:showItemInFolder', async (_event, filePath: string) => {
+    shell.showItemInFolder(filePath);
+  });
+
+  ipcMain.handle('clipboard:writeText', async (_event, text: string) => {
+    clipboard.writeText(text);
+  });
+
+  ipcMain.handle('shell:openExternal', async (_event, url: string) => {
+    await shell.openExternal(url);
   });
 }

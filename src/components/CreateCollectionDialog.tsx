@@ -23,9 +23,12 @@ export default function CreateCollectionDialog({
     <>
       <div
         className="fixed inset-0 z-40 bg-black/50"
-        onClick={onCancel}
+        onClick={(e) => { e.stopPropagation(); onCancel(); }}
       />
-      <div className="fixed left-1/2 top-1/2 z-50 w-80 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-surface-600 bg-surface-800 p-5 shadow-2xl">
+      <div
+        className="fixed left-1/2 top-1/2 z-50 w-80 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-surface-600 bg-surface-800 p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="mb-4 flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-600/20">
             <HiFolderPlus className="h-5 w-5 text-accent-500" />

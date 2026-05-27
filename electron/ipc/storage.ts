@@ -19,6 +19,7 @@ interface AppData {
   categories: Category[];
   userCollections: UserCollection[];
   collectionFiles: Record<string, string[]>;
+  ignoredPaths: string[];
   settings: Record<string, unknown>;
 }
 
@@ -54,6 +55,7 @@ function readData(): AppData {
           categories,
           userCollections: Array.isArray(data.userCollections) ? data.userCollections : [],
           collectionFiles: data.collectionFiles && typeof data.collectionFiles === 'object' ? data.collectionFiles : {},
+          ignoredPaths: Array.isArray(data.ignoredPaths) ? data.ignoredPaths : [],
           settings: data.settings && typeof data.settings === 'object' ? data.settings : {},
         };
         const dir = path.dirname(filePath);
@@ -67,13 +69,14 @@ function readData(): AppData {
         categories,
         userCollections: Array.isArray(data.userCollections) ? data.userCollections : [],
         collectionFiles: data.collectionFiles && typeof data.collectionFiles === 'object' ? data.collectionFiles : {},
+        ignoredPaths: Array.isArray(data.ignoredPaths) ? data.ignoredPaths : [],
         settings: data.settings && typeof data.settings === 'object' ? data.settings : {},
       };
     }
   } catch {
     // File not found or corrupted — start fresh
   }
-  return { favorites: [], importFolders: [], categories: [], userCollections: [], collectionFiles: {}, settings: {} };
+  return { favorites: [], importFolders: [], categories: [], userCollections: [], collectionFiles: {}, ignoredPaths: [], settings: {} };
 }
 
 function writeData(data: AppData): void {
@@ -132,18 +135,6 @@ export function registerStorageHandlers(): void {
     writeData(data);
   });
 
-  // Import folders persistence (legacy, kept for backward compat)
-  ipcMain.handle('storage:getImportFolders', () => {
-    const data = readData();
-    return data.importFolders;
-  });
-
-  ipcMain.handle('storage:saveImportFolders', (_event, folders: string[]) => {
-    const data = readData();
-    data.importFolders = folders;
-    writeData(data);
-  });
-
   // Categories persistence
   ipcMain.handle('storage:getCategories', () => {
     const data = readData();
@@ -188,13 +179,23 @@ export function registerStorageHandlers(): void {
     writeData(data);
   });
 
-  // Clear all data
-  ipcMain.handle('storage:clearAllData', () => {
-    writeData({ favorites: [], importFolders: [], categories: [], userCollections: [], collectionFiles: {}, settings: {} });
+  // Ignored paths (persisted remove-from-list)
+  ipcMain.handle('storage:getIgnoredPaths', () => {
+    const data = readData();
+    return data.ignoredPaths;
   });
 
-  // App info
-  ipcMain.handle('app:getVersion', () => {
-    return app.getVersion();
+  ipcMain.handle('storage:addIgnoredPath', (_event, filePath: string) => {
+    const data = readData();
+    if (!data.ignoredPaths.includes(filePath)) {
+      data.ignoredPaths.push(filePath);
+      writeData(data);
+    }
   });
+
+  // Clear all data
+  ipcMain.handle('storage:clearAllData', () => {
+    writeData({ favorites: [], importFolders: [], categories: [], userCollections: [], collectionFiles: {}, ignoredPaths: [], settings: {} });
+  });
+
 }

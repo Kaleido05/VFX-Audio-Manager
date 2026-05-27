@@ -6,11 +6,13 @@ interface AudioFileInfo {
   size: number;
   format: string;
   duration?: number;
+  relativeDir: string;
 }
 
 interface ScanResult {
   files: AudioFileInfo[];
   totalFolders: number;
+  subdirectories: string[];
   errors: string[];
 }
 
@@ -28,20 +30,6 @@ const electronAPI = {
   scanFolder: (folderPath: string): Promise<ScanResult> =>
     ipcRenderer.invoke('file:scanFolder', folderPath),
 
-  getAudioDuration: (filePath: string): Promise<number> =>
-    ipcRenderer.invoke('file:getAudioDuration', filePath),
-
-  // Drag & drop
-  onDropFolder: (callback: (folderPath: string) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, folderPath: string) => {
-      callback(folderPath);
-    };
-    ipcRenderer.on('drop:folder', handler);
-    return () => {
-      ipcRenderer.removeListener('drop:folder', handler);
-    };
-  },
-
   // Storage operations
   getFavorites: (): Promise<string[]> =>
     ipcRenderer.invoke('storage:getFavorites'),
@@ -54,12 +42,6 @@ const electronAPI = {
 
   toggleFavorite: (filePath: string): Promise<boolean> =>
     ipcRenderer.invoke('storage:toggleFavorite', filePath),
-
-  getImportFolders: (): Promise<string[]> =>
-    ipcRenderer.invoke('storage:getImportFolders'),
-
-  saveImportFolders: (folders: string[]): Promise<void> =>
-    ipcRenderer.invoke('storage:saveImportFolders', folders),
 
   // Category persistence
   getCategories: (): Promise<CategoryInfo[]> =>
@@ -88,15 +70,27 @@ const electronAPI = {
   updateSettings: (settings: Record<string, unknown>): Promise<void> =>
     ipcRenderer.invoke('storage:updateSettings', settings),
 
+  // Ignored paths
+  getIgnoredPaths: (): Promise<string[]> =>
+    ipcRenderer.invoke('storage:getIgnoredPaths'),
+
+  addIgnoredPath: (filePath: string): Promise<void> =>
+    ipcRenderer.invoke('storage:addIgnoredPath', filePath),
+
   // Clear all data
   clearAllData: (): Promise<void> =>
     ipcRenderer.invoke('storage:clearAllData'),
 
-  // App info
-  getAppVersion: (): Promise<string> =>
-    ipcRenderer.invoke('app:getVersion'),
+  // Shell / clipboard
+  showItemInFolder: (filePath: string): Promise<void> =>
+    ipcRenderer.invoke('shell:showItemInFolder', filePath),
 
-  getPlatform: (): string => process.platform,
+  copyToClipboard: (text: string): Promise<void> =>
+    ipcRenderer.invoke('clipboard:writeText', text),
+
+  openExternal: (url: string): Promise<void> =>
+    ipcRenderer.invoke('shell:openExternal', url),
+
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

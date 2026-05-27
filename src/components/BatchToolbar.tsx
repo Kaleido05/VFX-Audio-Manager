@@ -5,8 +5,34 @@ import {
   HiStar,
   HiTrash,
   HiSquares2X2,
+  HiFolderPlus,
+  HiBookmark,
 } from 'react-icons/hi2';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import type { AudioFile, SortKey } from '../types';
+
+function sortFiles(files: AudioFile[], key: SortKey, asc: boolean): AudioFile[] {
+  return [...files].sort((a, b) => {
+    let cmp: number;
+    switch (key) {
+      case 'name':
+        cmp = a.name.localeCompare(b.name);
+        break;
+      case 'size':
+        cmp = a.size - b.size;
+        break;
+      case 'duration':
+        cmp = a.duration - b.duration;
+        break;
+      case 'format':
+        cmp = a.format.localeCompare(b.format);
+        break;
+      default:
+        cmp = 0;
+    }
+    return asc ? cmp : -cmp;
+  });
+}
 
 export default function BatchToolbar() {
   const {
@@ -14,11 +40,17 @@ export default function BatchToolbar() {
     selectedFileIds,
     activeView,
     searchQuery,
+    sortKey,
+    sortAsc,
+    userCollections,
+    addToCollection,
     selectAllFiles,
     deselectAllFiles,
     batchToggleFavorite,
     batchDeleteFiles,
   } = useStore();
+
+  const [showBatchCollectionPicker, setShowBatchCollectionPicker] = useState(false);
 
   // Filter visible files (same logic as AudioList to match what user sees)
   const visibleFiles = useMemo(() => {
@@ -29,6 +61,12 @@ export default function BatchToolbar() {
       files = files.filter((f) => f.categoryId === activeView.categoryId);
     } else if (activeView.type === 'collection') {
       files = files.filter((f) => f.collectionIds.includes(activeView.collectionId));
+    } else if (activeView.type === 'subdirectory') {
+      files = files.filter(
+        (f) => f.categoryId === activeView.categoryId && f.subPath === activeView.subPath
+      );
+    } else if (activeView.type === 'recentlyPlayed') {
+      files = []; // handled separately
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -38,11 +76,12 @@ export default function BatchToolbar() {
           f.format.toLowerCase().includes(q)
       );
     }
-    return files.sort((a, b) => {
+    const favoritesFirst = [...files].sort((a, b) => {
       if (a.isFavorite !== b.isFavorite) return a.isFavorite ? -1 : 1;
-      return a.name.localeCompare(b.name);
+      return 0;
     });
-  }, [audioFiles, activeView, searchQuery]);
+    return sortFiles(favoritesFirst, sortKey, sortAsc);
+  }, [audioFiles, activeView, searchQuery, sortKey, sortAsc]);
 
   const visibleIds = useMemo(
     () => new Set(visibleFiles.map((f) => f.id)),
@@ -106,6 +145,42 @@ export default function BatchToolbar() {
         <HiStar className="h-3.5 w-3.5" />
         {allFavoritesInSelection ? '取消收藏' : '收藏'}
       </button>
+
+      {/* Batch add to collection */}
+      {userCollections.length > 0 && (
+        <div className="relative">
+          <button
+            onClick={() => setShowBatchCollectionPicker(!showBatchCollectionPicker)}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-surface-400 transition-all hover:bg-surface-700 hover:text-primary"
+          >
+            <HiFolderPlus className="h-3.5 w-3.5" />
+            添加到收藏夹
+          </button>
+          {showBatchCollectionPicker && (
+            <>
+              <div
+                className="fixed inset-0 z-50"
+                onClick={(e) => { e.stopPropagation(); setShowBatchCollectionPicker(false); }}
+              />
+              <div className="absolute bottom-full left-0 z-50 mb-1 w-44 rounded-lg border border-surface-600 bg-surface-800 py-1 shadow-xl">
+                {userCollections.map((col) => (
+                  <button
+                    key={col.id}
+                    onClick={() => {
+                      selectedFileIds.forEach((id) => addToCollection(id, col.id));
+                      setShowBatchCollectionPicker(false);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-surface-300 hover:bg-surface-700 hover:text-primary"
+                  >
+                    <HiBookmark className="h-3 w-3 text-amber-400" />
+                    <span className="truncate">{col.name}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Batch delete */}
       <button

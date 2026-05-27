@@ -1,6 +1,6 @@
 {
   "name": "vfx-audio-manager",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "现代化桌面音效管理软件 - 为视频剪辑创作者打造",
   "main": "dist/electron/main.js",
   "author": "Richard29",

@@ -17,6 +17,7 @@ export default defineConfig({
   plugins: [react(), stripCspDevPlugin()],
   root: 'src',
   base: './',
+  publicDir: path.resolve(__dirname, 'public'),
   build: {
     outDir: '../dist/renderer',
     emptyOutDir: true,

@@ -1,11 +1,37 @@
 import { useMemo } from 'react';
 import { useStore } from '../store/useStore';
 import AudioCard from './AudioCard';
-import { HiSquares2X2 } from 'react-icons/hi2';
-import type { AudioFile } from '../types';
+import { HiSquares2X2, HiArrowsUpDown } from 'react-icons/hi2';
+import { SORT_LABELS } from '../types';
+import type { AudioFile, SortKey } from '../types';
+
+const SORT_KEYS: SortKey[] = ['name', 'size', 'duration', 'format'];
+
+function sortFiles(files: AudioFile[], key: SortKey, asc: boolean): AudioFile[] {
+  return [...files].sort((a, b) => {
+    let cmp: number;
+    switch (key) {
+      case 'name':
+        cmp = a.name.localeCompare(b.name);
+        break;
+      case 'size':
+        cmp = a.size - b.size;
+        break;
+      case 'duration':
+        cmp = a.duration - b.duration;
+        break;
+      case 'format':
+        cmp = a.format.localeCompare(b.format);
+        break;
+      default:
+        cmp = 0;
+    }
+    return asc ? cmp : -cmp;
+  });
+}
 
 export default function AudioList() {
-  const { audioFiles, searchQuery, activeView, selectedFileIds, selectAllFiles } = useStore();
+  const { audioFiles, searchQuery, activeView, selectedFileIds, recentlyPlayedIds, sortKey, sortAsc, selectAllFiles, setSort } = useStore();
   const isBatchMode = selectedFileIds.size > 0;
 
   const filteredFiles = useMemo(() => {
@@ -14,10 +40,33 @@ export default function AudioList() {
     // Filter by view
     if (activeView.type === 'favorites') {
       files = files.filter((f) => f.isFavorite);
+    } else if (activeView.type === 'recentlyPlayed') {
+      const idSet = new Set(recentlyPlayedIds);
+      files = files.filter((f) => idSet.has(f.id));
+      // Preserve recently played order
+      files.sort((a, b) => {
+        const ia = recentlyPlayedIds.indexOf(a.id);
+        const ib = recentlyPlayedIds.indexOf(b.id);
+        return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib);
+      });
+      // Return early to skip default sort
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim();
+        files = files.filter(
+          (f) =>
+            f.name.toLowerCase().includes(query) ||
+            f.format.toLowerCase().includes(query)
+        );
+      }
+      return files;
     } else if (activeView.type === 'category') {
       files = files.filter((f) => f.categoryId === activeView.categoryId);
     } else if (activeView.type === 'collection') {
       files = files.filter((f) => f.collectionIds.includes(activeView.collectionId));
+    } else if (activeView.type === 'subdirectory') {
+      files = files.filter(
+        (f) => f.categoryId === activeView.categoryId && f.subPath === activeView.subPath
+      );
     }
 
     // Filter by search query
@@ -30,14 +79,15 @@ export default function AudioList() {
       );
     }
 
-    // Sort by favorite first, then by name
-    return [...files].sort((a, b) => {
+    // Sort by favorite first, then by selected sort
+    const favoritesFirst = [...files].sort((a, b) => {
       if (a.isFavorite !== b.isFavorite) {
         return a.isFavorite ? -1 : 1;
       }
-      return a.name.localeCompare(b.name);
+      return 0;
     });
-  }, [audioFiles, searchQuery, activeView]);
+    return sortFiles(favoritesFirst, sortKey, sortAsc);
+  }, [audioFiles, searchQuery, activeView, sortKey, sortAsc]);
 
   const allVisibleSelected =
     filteredFiles.length > 0 &&
@@ -96,11 +146,15 @@ export default function AudioList() {
           <p className="text-sm text-surface-400">
             {activeView.type === 'favorites'
               ? '还没有收藏任何音效'
-              : activeView.type === 'category'
+              : activeView.type === 'recentlyPlayed'
+                ? '还没有播放记录'
+                : activeView.type === 'category'
                 ? '该分类下没有匹配的文件'
                 : activeView.type === 'collection'
                   ? '该收藏夹下还没有音效'
-                  : `没有匹配 "${searchQuery}" 的结果`}
+                  : activeView.type === 'subdirectory'
+                    ? '该子目录下没有匹配的文件'
+                    : `没有匹配 "${searchQuery}" 的结果`}
           </p>
         </div>
       </div>
@@ -124,6 +178,31 @@ export default function AudioList() {
           </span>
         </div>
       )}
+
+      {/* Sort bar */}
+      <div className="flex items-center gap-2 border-b border-surface-700 px-4 py-1.5">
+        <HiArrowsUpDown className="h-3.5 w-3.5 text-surface-500" />
+        <div className="flex items-center gap-1">
+          {SORT_KEYS.map((key) => (
+            <button
+              key={key}
+              onClick={() => setSort(key, sortKey === key ? !sortAsc : true)}
+              className={`rounded px-2 py-0.5 text-xs transition-all ${
+                sortKey === key
+                  ? 'bg-accent-600/20 text-accent-400'
+                  : 'text-surface-400 hover:bg-surface-700 hover:text-primary'
+              }`}
+            >
+              {SORT_LABELS[key]}
+              {sortKey === key && (sortAsc ? ' ↑' : ' ↓')}
+            </button>
+          ))}
+        </div>
+        <div className="flex-1" />
+        <span className="text-xs text-surface-500">
+          {filteredFiles.length} 个文件
+        </span>
+      </div>
 
       {/* File grid */}
       <div className="flex-1 overflow-y-auto px-4 py-3">

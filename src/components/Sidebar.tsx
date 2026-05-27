@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import {
   HiFolderOpen,
@@ -13,6 +13,9 @@ import {
   HiFolder,
   HiFolderPlus,
   HiBookmark,
+  HiChevronRight,
+  HiChevronDown,
+  HiClock,
 } from 'react-icons/hi2';
 import CreateCollectionDialog from './CreateCollectionDialog';
 
@@ -21,6 +24,7 @@ export default function Sidebar() {
     categories,
     userCollections,
     collectionFiles,
+    audioFiles,
     activeView,
     importFolder,
     setActiveView,
@@ -36,6 +40,31 @@ export default function Sidebar() {
   const [editName, setEditName] = useState('');
   const [contextMenuId, setContextMenuId] = useState<string | null>(null);
   const [showCreateCollection, setShowCreateCollection] = useState(false);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  const subdirsByCategory = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const file of audioFiles) {
+      if (!file.subPath) continue;
+      const list = map.get(file.categoryId) || [];
+      if (!list.includes(file.subPath)) {
+        list.push(file.subPath);
+      }
+      map.set(file.categoryId, list);
+    }
+    for (const [, list] of map) {
+      list.sort((a, b) => a.localeCompare(b));
+    }
+    return map;
+  }, [audioFiles]);
+
+  const categoryFileCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const file of audioFiles) {
+      counts.set(file.categoryId, (counts.get(file.categoryId) || 0) + 1);
+    }
+    return counts;
+  }, [audioFiles]);
 
   const handleImport = useCallback(async () => {
     try {
@@ -101,6 +130,7 @@ export default function Sidebar() {
   const isActive = (view: typeof activeView) => {
     if (view.type === 'all' && activeView.type === 'all') return true;
     if (view.type === 'favorites' && activeView.type === 'favorites') return true;
+    if (view.type === 'recentlyPlayed' && activeView.type === 'recentlyPlayed') return true;
     if (
       view.type === 'category' &&
       activeView.type === 'category' &&
@@ -113,7 +143,21 @@ export default function Sidebar() {
       view.collectionId === activeView.collectionId
     )
       return true;
+    if (
+      view.type === 'subdirectory' &&
+      activeView.type === 'subdirectory' &&
+      view.categoryId === activeView.categoryId &&
+      view.subPath === activeView.subPath
+    )
+      return true;
     if (view.type === 'settings' && activeView.type === 'settings') return true;
+    return false;
+  };
+
+  // Highlight category when any of its subdirectories is active
+  const isCategoryActive = (catId: string) => {
+    if (activeView.type === 'category' && activeView.categoryId === catId) return true;
+    if (activeView.type === 'subdirectory' && activeView.categoryId === catId) return true;
     return false;
   };
 
@@ -185,6 +229,19 @@ export default function Sidebar() {
           我的收藏
         </button>
 
+        {/* Recently Played */}
+        <button
+          onClick={() => setActiveView({ type: 'recentlyPlayed' })}
+          className={`mb-0.5 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all ${
+            isActive({ type: 'recentlyPlayed' })
+              ? 'bg-surface-700 text-primary'
+              : 'text-surface-400 hover:bg-surface-800 hover:text-primary'
+          }`}
+        >
+          <HiClock className="h-4 w-4 shrink-0" />
+          最近播放
+        </button>
+
         {/* Categories section */}
         {categories.length > 0 && (
           <>
@@ -229,28 +286,62 @@ export default function Sidebar() {
                       setContextMenuId(contextMenuId === cat.id ? null : cat.id);
                     }}
                     className={`group/cat mb-0.5 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all ${
-                      isActive({ type: 'category', categoryId: cat.id })
+                      isCategoryActive(cat.id)
                         ? 'bg-surface-700 text-primary'
                         : 'text-surface-400 hover:bg-surface-800 hover:text-primary'
                     }`}
                   >
                     <HiFolder className="h-4 w-4 shrink-0" />
                     <span className="truncate text-left">{cat.name}</span>
+                    <span className="ml-auto text-[10px] text-surface-500">
+                      {categoryFileCounts.get(cat.id) || 0}
+                    </span>
 
-                    {/* Context menu trigger */}
-                    <div className="ml-auto flex shrink-0 opacity-0 group-hover/cat:opacity-100">
+                    {(subdirsByCategory.get(cat.id) || []).length > 0 && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          setContextMenuId(contextMenuId === cat.id ? null : cat.id);
+                          setExpandedCategories((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(cat.id)) next.delete(cat.id);
+                            else next.add(cat.id);
+                            return next;
+                          });
                         }}
-                        className="rounded p-0.5 text-surface-500 hover:text-primary"
+                        className="rounded p-0.5 text-surface-500 hover:text-primary shrink-0"
                       >
-                        <HiPencil className="h-3 w-3" />
+                        {expandedCategories.has(cat.id) ? (
+                          <HiChevronDown className="h-3 w-3" />
+                        ) : (
+                          <HiChevronRight className="h-3 w-3" />
+                        )}
                       </button>
-                    </div>
+                    )}
                   </button>
                 )}
+
+                {/* Subdirectory items */}
+                {expandedCategories.has(cat.id) &&
+                  (subdirsByCategory.get(cat.id) || []).map((subPath) => {
+                    const leafName = subPath.split('/').pop() || subPath;
+                    return (
+                      <button
+                        key={subPath}
+                        onClick={() =>
+                          setActiveView({ type: 'subdirectory', categoryId: cat.id, subPath })
+                        }
+                        className={`mb-0.5 flex w-full items-center gap-3 rounded-lg py-1.5 pl-10 pr-3 text-xs transition-all ${
+                          isActive({ type: 'subdirectory', categoryId: cat.id, subPath })
+                            ? 'bg-surface-700 text-primary'
+                            : 'text-surface-400 hover:bg-surface-800 hover:text-primary'
+                        }`}
+                        title={subPath}
+                      >
+                        <HiFolder className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate text-left">{leafName}</span>
+                      </button>
+                    );
+                  })}
 
                 {/* Context menu popup */}
                 {contextMenuId === cat.id && (
@@ -332,18 +423,10 @@ export default function Sidebar() {
                   >
                     <HiBookmark className="h-4 w-4 shrink-0 text-amber-400" />
                     <span className="truncate text-left">{col.name}</span>
+                    <span className="ml-auto text-[10px] text-surface-500">
+                      {(collectionFiles[col.id] || []).length}
+                    </span>
 
-                    <div className="ml-auto flex shrink-0 opacity-0 group-hover/col:opacity-100">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setContextMenuId(contextMenuId === col.id ? null : col.id);
-                        }}
-                        className="rounded p-0.5 text-surface-500 hover:text-primary"
-                      >
-                        <HiPencil className="h-3 w-3" />
-                      </button>
-                    </div>
                   </button>
                 )}
 
