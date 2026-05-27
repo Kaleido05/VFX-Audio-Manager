@@ -1,5 +1,74 @@
+import { useState, useCallback } from 'react';
 import { useStore } from '../store/useStore';
-import { HiSpeakerWave, HiMoon, HiSun, HiTrash, HiArrowLeft, HiCommandLine } from 'react-icons/hi2';
+import { HiSpeakerWave, HiMoon, HiSun, HiTrash, HiArrowLeft, HiCommandLine, HiPencil } from 'react-icons/hi2';
+import { DEFAULT_SHORTCUTS } from '../types';
+import type { ShortcutConfig, AppSettings } from '../types';
+import { shortcutEventToString } from '../hooks/useKeyboardShortcuts';
+
+type ShortcutAction = keyof ShortcutConfig;
+
+const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
+  playPause: '播放 / 暂停',
+  deselect: '取消选择 / 停止播放',
+  delete: '删除已选文件',
+  selectAll: '全选当前列表',
+  focusSearch: '聚焦搜索框',
+  seekBack: '快退 5 秒',
+  seekForward: '快进 5 秒',
+  volumeUp: '音量增大 5%',
+  volumeDown: '音量减小 5%',
+  toggleMute: '静音 / 取消静音',
+  queueNext: '加入播放队列',
+};
+
+const ALL_SHORTCUT_ACTIONS = Object.keys(SHORTCUT_LABELS) as ShortcutAction[];
+
+function KeyBindButton({
+  action,
+  currentKey,
+  onChange,
+}: {
+  action: ShortcutAction;
+  currentKey: string;
+  onChange: (action: ShortcutAction, key: string) => void;
+}) {
+  const [recording, setRecording] = useState(false);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const keyStr = shortcutEventToString(e as unknown as KeyboardEvent);
+      onChange(action, keyStr);
+      setRecording(false);
+    },
+    [action, onChange]
+  );
+
+  if (recording) {
+    return (
+      <button
+        className="flex items-center gap-1 rounded border border-accent-500 bg-accent-600/20 px-2 py-0.5 font-mono text-[11px] text-accent-400 animate-pulse"
+        onKeyDown={handleKeyDown}
+        autoFocus
+        onBlur={() => setRecording(false)}
+      >
+        按下快捷键...
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setRecording(true)}
+      className="flex items-center gap-1 rounded border border-surface-600 bg-surface-700 px-2 py-0.5 font-mono text-[11px] text-surface-300 transition-all hover:border-accent-500 hover:text-primary"
+      title="点击修改快捷键"
+    >
+      {currentKey}
+      <HiPencil className="h-2.5 w-2.5 text-surface-500" />
+    </button>
+  );
+}
 
 export default function SettingsPage() {
   const { settings, updateSettings, resetAllData, setActiveView } = useStore();
@@ -8,6 +77,18 @@ export default function SettingsPage() {
     if (window.confirm('确定要清除所有数据吗？此操作不可恢复。')) {
       resetAllData();
     }
+  };
+
+  const handleShortcutChange = useCallback(
+    (action: ShortcutAction, key: string) => {
+      const next = { ...settings.shortcuts, [action]: key };
+      updateSettings({ shortcuts: next } as Partial<AppSettings>);
+    },
+    [settings.shortcuts, updateSettings]
+  );
+
+  const handleResetShortcuts = () => {
+    updateSettings({ shortcuts: { ...DEFAULT_SHORTCUTS } } as Partial<AppSettings>);
   };
 
   return (
@@ -91,34 +172,38 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Keyboard Shortcuts */}
+        {/* Customizable Keyboard Shortcuts */}
         <div className="rounded-xl border border-surface-700 bg-surface-800/50 p-5">
           <div className="mb-3 flex items-center gap-2">
             <HiCommandLine className="h-5 w-5 text-accent-500" />
             <h3 className="text-sm font-medium text-primary">快捷键</h3>
           </div>
-          <div className="space-y-2 text-xs">
-            {[
-              ['Space', '播放 / 暂停'],
-              ['Escape', '取消选择 / 停止播放'],
-              ['Delete', '删除已选中的文件'],
-              ['Ctrl + A', '全选当前列表'],
-              ['Ctrl + F', '聚焦搜索框'],
-              ['← →', '快退 / 快进 5 秒'],
-              ['↑ ↓', '音量增大 / 减小 5%'],
-              ['M', '静音 / 取消静音'],
-            ].map(([key, desc]) => (
+          <p className="mb-3 text-xs text-surface-400">
+            点击快捷键按钮即可自定义绑定
+          </p>
+          <div className="space-y-1">
+            {ALL_SHORTCUT_ACTIONS.map((action) => (
               <div
-                key={key}
+                key={action}
                 className="flex items-center justify-between rounded-lg px-3 py-1.5 hover:bg-surface-700/50"
               >
-                <span className="text-surface-400">{desc}</span>
-                <kbd className="rounded border border-surface-600 bg-surface-700 px-2 py-0.5 font-mono text-[11px] text-surface-300">
-                  {key}
-                </kbd>
+                <span className="text-xs text-surface-400">
+                  {SHORTCUT_LABELS[action]}
+                </span>
+                <KeyBindButton
+                  action={action}
+                  currentKey={settings.shortcuts[action]}
+                  onChange={handleShortcutChange}
+                />
               </div>
             ))}
           </div>
+          <button
+            onClick={handleResetShortcuts}
+            className="mt-3 rounded-lg px-3 py-1 text-[11px] text-surface-500 transition-all hover:text-surface-300"
+          >
+            恢复默认快捷键
+          </button>
         </div>
 
         {/* Data Management */}
@@ -136,6 +221,44 @@ export default function SettingsPage() {
           >
             清除所有数据
           </button>
+        </div>
+
+        {/* About / Author */}
+        <div className="rounded-xl border border-surface-700 bg-surface-800/50 p-5">
+          <h3 className="mb-4 text-sm font-medium text-primary">关于作者</h3>
+          <div className="flex items-center gap-4">
+            <img
+              src="./image/head.png"
+              alt="作者头像"
+              className="h-16 w-16 rounded-full border-2 border-surface-600 object-cover"
+            />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <p className="text-sm font-medium text-primary">Richard29</p>
+              <p className="text-xs text-surface-400">
+                邮箱：{' '}
+                <a
+                  href="mailto:gcfic05@163.com"
+                  className="text-accent-500 hover:text-accent-400 transition-colors"
+                >
+                  gcfic05@163.com
+                </a>
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => window.electronAPI.openExternal('https://v.douyin.com/s1yjo7ZGo_o/')}
+                  className="text-xs text-surface-400 hover:text-accent-400 transition-colors"
+                >
+                  抖音
+                </button>
+                <button
+                  onClick={() => window.electronAPI.openExternal('https://b23.tv/9byXWeS')}
+                  className="text-xs text-surface-400 hover:text-accent-400 transition-colors"
+                >
+                  B站
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

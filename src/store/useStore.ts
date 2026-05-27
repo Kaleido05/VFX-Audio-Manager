@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import type { AppState, AudioFile, PlayerState, Category, UserCollection, ActiveView } from '../types';
+import type { AppState, AudioFile, PlayerState, Category, UserCollection, ActiveView, ShortcutConfig } from '../types';
+import { DEFAULT_SHORTCUTS } from '../types';
 
 const initialPlayerState: PlayerState = {
   currentFile: null,
@@ -20,8 +21,12 @@ export const useStore = create<AppState>((set, get) => ({
   categories: [],
   userCollections: [],
   collectionFiles: {},
-  importFolders: [],
   selectedFileIds: new Set<string>(),
+  recentlyPlayedIds: [],
+  playQueue: [],
+  loopMode: 'off' as const,
+  playbackRate: 1.0,
+  sleepTimerEnd: null,
 
   // Player
   player: { ...initialPlayerState },
@@ -31,11 +36,16 @@ export const useStore = create<AppState>((set, get) => ({
   activeView: { type: 'all' } as ActiveView,
   isLoading: false,
   error: null,
+  sortKey: 'name',
+  sortAsc: true,
 
   // Settings
   settings: {
     defaultVolume: 0.8,
     theme: 'dark' as const,
+    shortcuts: { ...DEFAULT_SHORTCUTS },
+    sortKey: 'name' as const,
+    sortAsc: true,
   },
 
   // ---- Folder import ----
@@ -55,7 +65,11 @@ export const useStore = create<AppState>((set, get) => ({
         console.warn('Scan warnings:', result.errors);
       }
 
-      const favorites = await window.electronAPI.getFavorites();
+      const [favorites, ignoredPaths] = await Promise.all([
+        window.electronAPI.getFavorites(),
+        window.electronAPI.getIgnoredPaths(),
+      ]);
+      const ignoredSet = new Set(ignoredPaths);
 
       const category: Category = {
         id: uuidv4(),
@@ -63,7 +77,8 @@ export const useStore = create<AppState>((set, get) => ({
         folderPath,
       };
 
-      const audioFiles: AudioFile[] = result.files.map((file) => ({
+      const scannedFiles = result.files.filter((f) => !ignoredSet.has(f.path));
+      const audioFiles: AudioFile[] = scannedFiles.map((file) => ({
         id: uuidv4(),
         name: file.name,
         path: file.path,
@@ -73,6 +88,7 @@ export const useStore = create<AppState>((set, get) => ({
         isFavorite: favorites.includes(file.path),
         categoryId: category.id,
         collectionIds: [],
+        subPath: file.relativeDir || '',
       }));
 
       const newCategories = [...get().categories, category];
@@ -80,7 +96,6 @@ export const useStore = create<AppState>((set, get) => ({
       set((state) => ({
         audioFiles: [...state.audioFiles, ...audioFiles],
         categories: newCategories,
-        importFolders: [...state.importFolders, folderPath],
         isLoading: false,
       }));
 
@@ -100,14 +115,19 @@ export const useStore = create<AppState>((set, get) => ({
       if (savedCategories.length === 0) return;
 
       const existing = get().categories;
-      const favorites = await window.electronAPI.getFavorites();
+      const [favorites, ignoredPaths] = await Promise.all([
+        window.electronAPI.getFavorites(),
+        window.electronAPI.getIgnoredPaths(),
+      ]);
+      const ignoredSet = new Set(ignoredPaths);
 
       for (const cat of savedCategories) {
         if (existing.some((c) => c.id === cat.id)) continue;
 
         const result = await window.electronAPI.scanFolder(cat.folderPath);
+        const scannedFiles = result.files.filter((f) => !ignoredSet.has(f.path));
 
-        const audioFiles: AudioFile[] = result.files.map((file) => ({
+        const audioFiles: AudioFile[] = scannedFiles.map((file) => ({
           id: uuidv4(),
           name: file.name,
           path: file.path,
@@ -117,12 +137,12 @@ export const useStore = create<AppState>((set, get) => ({
           isFavorite: favorites.includes(file.path),
           categoryId: cat.id,
           collectionIds: [],
+          subPath: file.relativeDir || '',
         }));
 
         set((state) => ({
           audioFiles: [...state.audioFiles, ...audioFiles],
           categories: [...state.categories, cat],
-          importFolders: [...state.importFolders, cat.folderPath],
         }));
       }
     } catch (err) {
@@ -164,9 +184,6 @@ export const useStore = create<AppState>((set, get) => ({
     set((state) => ({
       audioFiles: state.audioFiles.filter((f) => f.categoryId !== categoryId),
       categories: state.categories.filter((c) => c.id !== categoryId),
-      importFolders: state.importFolders.filter(
-        (f) => !state.categories.some((c) => c.id === categoryId && c.folderPath === f)
-      ),
       selectedFileIds: new Set(
         [...state.selectedFileIds].filter((id) => !removedIds.has(id))
       ),
@@ -176,7 +193,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   // ---- Favorites ----
-  toggleFavorite: async (fileId: string) => {
+  toggleFavoriteQuick: async (fileId: string) => {
     const { audioFiles } = get();
     const file = audioFiles.find((f) => f.id === fileId);
     if (!file) return;
@@ -249,17 +266,35 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   deleteUserCollection: async (id: string) => {
+    const { collectionFiles, audioFiles } = get();
+    const removedFileIds = collectionFiles[id] || [];
+
     set((state) => {
       const { [id]: _, ...rest } = state.collectionFiles;
       return {
         userCollections: state.userCollections.filter((c) => c.id !== id),
         collectionFiles: rest,
+        audioFiles: state.audioFiles.map((f) => {
+          if (!removedFileIds.includes(f.id)) return f;
+          const remaining = f.collectionIds.filter((cid) => cid !== id);
+          return {
+            ...f,
+            collectionIds: remaining,
+            isFavorite: remaining.length > 0,
+          };
+        }),
       };
     });
 
     try {
       await window.electronAPI.saveUserCollections(get().userCollections);
       await window.electronAPI.saveCollectionFiles(get().collectionFiles);
+      for (const fileId of removedFileIds) {
+        const file = get().audioFiles.find((f) => f.id === fileId);
+        if (file && !file.isFavorite) {
+          await window.electronAPI.removeFavorite(file.path);
+        }
+      }
     } catch (err) {
       console.error('Delete user collection failed:', err);
     }
@@ -357,9 +392,15 @@ export const useStore = create<AppState>((set, get) => ({
           ? Math.max(0, Math.min(1, raw.defaultVolume))
           : 0.8;
       const theme = (raw.theme === 'dark' || raw.theme === 'light') ? raw.theme : 'dark';
+      const rawShortcuts = raw.shortcuts && typeof raw.shortcuts === 'object' ? raw.shortcuts as Partial<ShortcutConfig> : {};
+      const shortcuts: ShortcutConfig = { ...DEFAULT_SHORTCUTS, ...rawShortcuts };
+      const sortKey = (raw.sortKey === 'name' || raw.sortKey === 'size' || raw.sortKey === 'duration' || raw.sortKey === 'format') ? raw.sortKey as 'name' | 'size' | 'duration' | 'format' : 'name';
+      const sortAsc = typeof raw.sortAsc === 'boolean' ? raw.sortAsc : true;
       document.documentElement.classList.toggle('light', theme === 'light');
       set({
-        settings: { defaultVolume, theme },
+        settings: { defaultVolume, theme, shortcuts, sortKey, sortAsc },
+        sortKey,
+        sortAsc,
         player: { ...get().player, volume: defaultVolume },
       });
     } catch (err) {
@@ -392,15 +433,87 @@ export const useStore = create<AppState>((set, get) => ({
       categories: [],
       userCollections: [],
       collectionFiles: {},
-      importFolders: [],
       selectedFileIds: new Set(),
-      settings: { defaultVolume: 0.8, theme: 'dark' },
+      recentlyPlayedIds: [],
+      playQueue: [],
+      loopMode: 'off' as const,
+      playbackRate: 1.0,
+      sleepTimerEnd: null,
+      sortKey: 'name',
+      sortAsc: true,
+      settings: { defaultVolume: 0.8, theme: 'dark', shortcuts: { ...DEFAULT_SHORTCUTS }, sortKey: 'name' as const, sortAsc: true },
       player: { ...initialPlayerState, volume: 0.8 },
       activeView: { type: 'all' },
       searchQuery: '',
       error: null,
     });
     await window.electronAPI.clearAllData();
+  },
+
+  // ---- Play queue ----
+  addToPlayQueue: (fileId: string) => {
+    set((state) => ({
+      playQueue: [...state.playQueue, fileId],
+    }));
+  },
+
+  removeFromPlayQueue: (index: number) => {
+    set((state) => ({
+      playQueue: state.playQueue.filter((_, i) => i !== index),
+    }));
+  },
+
+  clearPlayQueue: () => {
+    set({ playQueue: [] });
+  },
+
+  playNextInQueue: () => {
+    const { playQueue, audioFiles, loopMode, player } = get();
+    if (playQueue.length === 0) {
+      if (loopMode === 'all' && player.currentFile) {
+        set({
+          player: { ...player, isPlaying: true, currentTime: 0, duration: 0 },
+        });
+      } else {
+        set({ player: { ...player, isPlaying: false, currentTime: 0, duration: 0 } });
+      }
+      return;
+    }
+    const [nextId, ...rest] = playQueue;
+    const nextFile = audioFiles.find((f) => f.id === nextId);
+    if (nextFile) {
+      set((state) => ({
+        playQueue: rest,
+        player: {
+          ...state.player,
+          currentFile: nextFile,
+          isPlaying: true,
+          currentTime: 0,
+          duration: 0,
+        },
+      }));
+    } else {
+      set({ playQueue: rest });
+      get().playNextInQueue();
+    }
+  },
+
+  // ---- Playback controls ----
+  setLoopMode: (mode) => {
+    set({ loopMode: mode });
+  },
+
+  setPlaybackRate: (rate) => {
+    const clamped = Math.max(0.5, Math.min(2.0, rate));
+    set({ playbackRate: clamped });
+  },
+
+  setSleepTimer: (minutes) => {
+    if (minutes === null) {
+      set({ sleepTimerEnd: null });
+    } else {
+      set({ sleepTimerEnd: Date.now() + minutes * 60000 });
+    }
   },
 
   // ---- Batch operations ----
@@ -448,17 +561,80 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   batchDeleteFiles: () => {
+    const { selectedFileIds, audioFiles } = get();
+    const removedPaths = audioFiles
+      .filter((f) => selectedFileIds.has(f.id))
+      .map((f) => f.path);
+
     set((state) => ({
       audioFiles: state.audioFiles.filter(
         (f) => !state.selectedFileIds.has(f.id)
       ),
       selectedFileIds: new Set(),
     }));
+
+    for (const p of removedPaths) {
+      window.electronAPI.addIgnoredPath(p).catch((err) => {
+        console.error('Add ignored path failed:', err);
+      });
+    }
+  },
+
+  // ---- Individual file operations ----
+  renameAudioFile: (fileId: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    set((state) => ({
+      audioFiles: state.audioFiles.map((f) =>
+        f.id === fileId ? { ...f, customName: trimmed } : f
+      ),
+    }));
+  },
+
+  removeFileFromList: (fileId: string) => {
+    const { player, audioFiles } = get();
+    const file = audioFiles.find((f) => f.id === fileId);
+    if (!file) return;
+
+    if (player.currentFile?.id === fileId) {
+      set({
+        player: { ...initialPlayerState, volume: player.volume },
+      });
+    }
+
+    set((state) => {
+      const nextCollectionFiles = { ...state.collectionFiles };
+      for (const colId of file.collectionIds) {
+        if (nextCollectionFiles[colId]) {
+          nextCollectionFiles[colId] = nextCollectionFiles[colId].filter((id) => id !== fileId);
+        }
+      }
+      return {
+        audioFiles: state.audioFiles.filter((f) => f.id !== fileId),
+        collectionFiles: nextCollectionFiles,
+        selectedFileIds: (() => {
+          const next = new Set(state.selectedFileIds);
+          next.delete(fileId);
+          return next;
+        })(),
+      };
+    });
+
+    window.electronAPI.saveCollectionFiles(get().collectionFiles).catch((err) => {
+      console.error('Save collection files after remove failed:', err);
+    });
+    window.electronAPI.addIgnoredPath(file.path).catch((err) => {
+      console.error('Add ignored path failed:', err);
+    });
   },
 
   // ---- Player ----
   playFile: (file: AudioFile) => {
+    const { recentlyPlayedIds } = get();
+    const filtered = recentlyPlayedIds.filter((id) => id !== file.id);
+    const next = [file.id, ...filtered].slice(0, 20);
     set({
+      recentlyPlayedIds: next,
       player: {
         currentFile: file,
         isPlaying: true,
@@ -466,6 +642,13 @@ export const useStore = create<AppState>((set, get) => ({
         duration: 0,
         volume: get().player.volume,
       },
+    });
+  },
+
+  addToRecentlyPlayed: (fileId: string) => {
+    set((state) => {
+      const filtered = state.recentlyPlayedIds.filter((id) => id !== fileId);
+      return { recentlyPlayedIds: [fileId, ...filtered].slice(0, 20) };
     });
   },
 
@@ -509,11 +692,11 @@ export const useStore = create<AppState>((set, get) => ({
     set({ activeView: view, selectedFileIds: new Set() });
   },
 
-  setLoading: (loading: boolean) => {
-    set({ isLoading: loading });
-  },
-
-  setError: (error: string | null) => {
-    set({ error });
+  setSort: (sortKey, sortAsc) => {
+    set({ sortKey, sortAsc });
+    const { settings } = get();
+    window.electronAPI
+      .updateSettings({ ...settings, sortKey, sortAsc } as unknown as Record<string, unknown>)
+      .catch((err) => console.error('Save sort settings failed:', err));
   },
 }));

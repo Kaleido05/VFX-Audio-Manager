@@ -11,31 +11,43 @@ VFX Audio Manager — Windows desktop app for importing, browsing, searching, an
 ### Audio import & management
 - **Folder import** — system dialog selects a folder, recursively scans all subdirectories for audio files (MP3, WAV, FLAC, OGG, M4A, AAC, WMA, AIFF, OPUS, WEBM, MKA)
 - **Drag-and-drop import** — drop a folder onto the app window to import directly (`App.tsx` dragover/drop handlers)
-- **Category system** — each imported folder becomes a "category" shown in the sidebar; supports inline rename (Enter/Escape) and delete via right-click context menu, with confirmation dialog
+- **Category system** — each imported folder becomes a "category" shown in the sidebar; supports rename (Enter/Escape) and delete via right-click context menu, with confirmation dialog; no inline edit icon — all management via context menu
+- **Subdirectory browsing** — scanner tracks `relativeDir` per file during recursive scan; sidebar shows expandable chevron toggle on categories that contain nested folders; clicking a subdirectory filters the audio list to files only within that subdirectory (`ActiveView` type `'subdirectory'`)
 - **Session restore** — on startup, `loadAndRestoreFolders()` re-scans previously imported folders and rebuilds the file list from disk; categories are persisted to JSON
-- **Format color tags** — each audio format gets a distinct colored badge (MP3 blue, WAV green, FLAC purple, OGG amber, M4A rose, AAC cyan, WMA orange)
+- **Format color tags** — all 12 supported formats get distinct colored badges (MP3 blue, WAV green, FLAC purple, OGG amber, M4A rose, AAC cyan, WMA orange, AIFF/AIF teal, OPUS pink, WEBM indigo, MKA lime)
 
 ### Audio playback
 - **Duration detection** — `music-metadata` reads audio duration from file headers during import (parallel batches of 8); supports all 11 formats; fallback to `--:--` for unreadable files
 - **Pause/resume** — `App.tsx` effect only triggers `audioManager.play()` on file change, not on `isPlaying` toggle; `AudioCard` and `AudioPlayer` call `audioManager.pause()` / `audioManager.resume()` directly for instant pause/resume without restarting
 - **Right-side fixed-width player panel** — 256px (`w-64`) vertical layout that doesn't resize when switching tracks with different durations
 - **Mono-spaced timestamps** — `font-mono` + `tabular-nums` with `min-w-[2.5em]` ensures time display width stays constant regardless of value (e.g. `0:00` → `10:00`)
+- **Three-line card layout** — AudioCard displays file name on line 1 (supports inline rename via right-click context menu), format badge + file size on line 2, and duration with "时长：" prefix on line 3 to prevent text layout issues at narrow widths
+- **Right-click context menu** — AudioCard supports `onContextMenu` with 6 actions: play, add to collection, open in Explorer (`shell.showItemInFolder`), copy path (`clipboard.writeText`), rename (in-app only, sets `customName`), remove from list. All shell/clipboard operations go through IPC handlers in the main process. Context menu overlay and popup both use `stopPropagation` to prevent click events from bubbling to the card's play handler.
 - **Play/pause/stop** — centered controls in the player panel
 - **Progress bar** — range slider at the top of the player panel for scrubbing
 - **Volume control** — slider (0-100%) with mute toggle, located at the panel bottom with a separator
 - **Playing indicator** — currently playing audio card shows a blue progress bar along its bottom edge
 - **Singleton playback** — `AudioManager` singleton ensures only one audio plays at a time
+- **Play queue** — right-click "添加到播放队列" or Ctrl+Q adds files to a sequential queue; queue persists in memory, lost on restart
+- **Loop modes** — off / single-track / queue-all; controlled via segmented toggle in the player panel
+- **Playback speed** — 0.5x to 2.0x in 6 steps; `AudioManager.setPlaybackRate()` delegates to `HTMLAudioElement.playbackRate`
+- **Sleep timer** — 15/30/60 minute countdown; auto-pauses playback on expiry; manual stop clears the timer
 
 ### Search & filtering
 - **Real-time search** — search bar filters by filename and format, with a clear (X) button
-- **View switching** — sidebar provides "All Audio", "Favorites", and per-category views
-- **Sorting** — favorites appear first, then alphabetical by filename
+- **View switching** — sidebar provides "All Audio", "Favorites", "Recently Played", and per-category views
+- **Sorting** — favorites appear first, then sort by user-selected key (name, size, duration, format) with asc/desc toggle; recently played view sorts by play recency; sort preference persisted to settings
 - **Empty states** — empty library shows intro guide; no-search-results shows contextual messages per view type
 
+### Recently played
+- **Auto-tracking** — `playFile` automatically adds the file ID to `recentlyPlayedIds` (max 20, most recent first, de-duplicated)
+- **Recently Played view** — sidebar clock icon navigates to `{ type: 'recentlyPlayed' }` view; `AudioList` filters by ID set and preserves recency order; supports search within recent files
+- **In-memory only** — not persisted to disk; resets on app restart
+
 ### Favorites & user collections
-- **Collection picker** — clicking the star on an audio card opens a modal (`CollectionPicker`) to choose which user-created collection to add the file to
+- **Collection picker** — star button toggles quick favorite/unfavorite directly; right-click context menu → "添加到收藏夹" opens modal (`CollectionPicker`) to choose which user-created collection to add the file to; modal uses `stopPropagation` to prevent click events from bubbling to the card's play handler; includes a confirm (完成) button to dismiss
 - **User collections** — create custom folders via sidebar "新建收藏夹" button (located directly below "导入文件夹", same accent button style) or from within the collection picker; each collection appears in sidebar under "我的收藏夹" section
-- **Collection management** — rename/delete collections via right-click context menu; files can belong to multiple collections
+- **Collection management** — rename/delete collections via right-click context menu (no inline edit icon); deleting a collection cleans up all associated file references (`collectionIds` and `isFavorite`) and persists changes; files can belong to multiple collections
 - **Collection view** — clicking a collection in sidebar filters audio list to show only files in that collection
 - **Persistent storage** — collections and file mappings saved to `vfx-data.json`, restored on startup via `loadUserCollections()`
 
@@ -43,25 +55,32 @@ VFX Audio Manager — Windows desktop app for importing, browsing, searching, an
 - **Multi-select** — clicking the checkbox area on any card enters batch mode; `BatchToolbar` replaces `SearchBar`
 - **Select all / deselect all** — toolbar button toggles all currently visible files
 - **Batch favorite/unfavorite** — apply favorite state to all selected files at once
-- **Batch delete from list** — removes selected files from the list (does not touch disk files), with confirmation dialog
+- **Batch add to collection** — toolbar dropdown to add all selected files to a chosen collection at once
+- **Batch delete from list** — removes selected files from the list (does not touch disk files), persists via `ignoredPaths` so removed files stay gone across restarts
 - **Selection count** — toolbar shows live count of selected files
 
 ### Keyboard shortcuts
 - **Global hotkeys** — `src/hooks/useKeyboardShortcuts.ts` registers document-level keydown listener; skips when focus is in input/textarea
-- **Space** — Play/Pause toggle for current track
-- **Escape** — Deselect all (batch mode) or stop playback
-- **Delete** — Delete selected files with confirmation dialog
-- **Ctrl+A** — Select all visible (respected by AudioList)
-- **Ctrl+F** — Focus search bar
-- **Arrow Left/Right** — Seek backward/forward 5 seconds
-- **Arrow Up/Down** — Volume up/down 5%
-- **M** — Toggle mute (0% / 80%)
-- **Shortcut reference** — displayed in Settings page below theme section
+- **All 11 shortcuts are user-customizable** — stored in `settings.shortcuts` (`ShortcutConfig` type), persisted to `vfx-data.json`, editable in Settings page via `KeyBindButton` component (click to enter recording mode, press desired key combination)
+- **Shortcut format** — `"Ctrl+A"`, `"Space"`, `"ArrowLeft"`, `"KeyM"`, etc.; `parseShortcut()` splits on `+` and maps to `e.code` / modifier flags (`ctrlKey`/`metaKey`/`shiftKey`/`altKey`); `shortcutEventToString()` does the reverse for the recording UI
+- Defaults:
+  - **Space** — Play/Pause toggle
+  - **Escape** — Deselect all (batch mode) or stop playback
+  - **Delete** — Delete selected files (persists ignored paths)
+  - **Ctrl+A** — Select all visible files (computes visibility from current view/search, including subdirectory and recentlyPlayed views)
+  - **Ctrl+F** — Focus search bar
+  - **Arrow Left/Right** — Seek backward/forward 5 seconds
+  - **Arrow Up/Down** — Volume up/down 5%
+  - **M** — Toggle mute (0% / 80%)
+  - **Ctrl+Q** — Add first selected file to play queue, then deselect
+- **Shortcut reference** — displayed in Settings page with live rebinding UI; "恢复默认快捷键" button resets all to defaults
 
 ### Settings
 - **Default volume** — slider to set the volume applied on each app launch
 - **Theme switching** — toggle between dark theme (default, inspired by Adobe Audition / Spotify / Notion) and light theme (white backgrounds with adapted component colors) via the settings page
-- **Data management** — "Clear all data" button wipes all imported files, categories, favorites, and settings (with confirmation)
+- **Customizable keyboard shortcuts** — each shortcut shows current binding; click to record a new key combo; reset-to-defaults button
+- **Data management** — "Clear all data" button wipes all imported files, categories, favorites, shortcuts, and settings (with confirmation)
+- **Author info** — avatar (`public/image/head.png`), email (`gcfic05@163.com`), Douyin link, Bilibili link (external links open in system default browser via `shell.openExternal`)
 
 ### UI/UX
 - **Dark + Light themes** — dual theme system using CSS custom properties; dark theme (default, `surface-950 = #0d0f12` background) and light theme (`surface-950 = #ffffff` background) toggleable in settings; surface color scale flips between themes
@@ -71,12 +90,12 @@ VFX Audio Manager — Windows desktop app for importing, browsing, searching, an
 - **Responsive grid** — audio cards use a responsive grid (1–5 columns depending on viewport width)
 - **React.memo** — `AudioCard` is memoized to avoid unnecessary re-renders in large lists
 - **useMemo** — search/filter/sort results are cached in `AudioList` and `BatchToolbar`
-- **Footer** — sidebar footer shows category/collection counts and "Developed by Richard29"
+- **Footer** — sidebar footer shows category/collection counts and "Developed by Richard29"; each category and collection item shows inline file count badge
 
 ### Data persistence
 - **JSON file** — all data stored at `%APPDATA%/vfx-audio-manager/vfx-data.json`
 - **Legacy migration** — storage layer auto-migrates old `importFolders` format to the `categories` model
-- **Cross-session** — categories, favorites, and settings survive app restart
+- **Cross-session** — categories, favorites, ignoredPaths, and settings survive app restart; removed files stay gone via `ignoredPaths` persistence
 
 ### Security model
 - `contextIsolation: true`, `nodeIntegration: false` — renderer cannot access Node APIs directly
@@ -118,9 +137,9 @@ Two tsconfigs extend the base `tsconfig.json`:
 ### State management (Zustand)
 
 `src/store/useStore.ts` is the single Zustand store. It holds:
-- **Data**: `audioFiles[]`, `categories[]`, `userCollections[]`, `collectionFiles: Record<string, string[]>`, `importFolders[]`, `selectedFileIds: Set<string>`
+- **Data**: `audioFiles[]`, `categories[]`, `userCollections[]`, `collectionFiles: Record<string, string[]>`, `importFolders[]`, `selectedFileIds: Set<string>`, `recentlyPlayedIds: string[]` (max 20)
 - **Player**: `player: PlayerState` (currentFile, isPlaying, currentTime, duration, volume)
-- **UI**: `searchQuery`, `activeView` (discriminated union: `all` | `favorites` | `category` | `collection` | `settings`), `isLoading`, `error`
+- **UI**: `searchQuery`, `activeView` (discriminated union: `all` | `favorites` | `recentlyPlayed` | `category` | `collection` | `subdirectory` | `settings`), `sortKey` (name/size/duration/format), `sortAsc`, `isLoading`, `error`
 - Async actions call `window.electronAPI.*` then update store state. Key action groups:
   - Folder/category: `importFolder`, `loadAndRestoreFolders`, `renameCategory`, `removeCategory`
   - Favorites: `toggleFavorite`, `loadFavorites`
@@ -136,21 +155,21 @@ Two tsconfigs extend the base `tsconfig.json`:
 
 ```
 App
-├── useKeyboardShortcuts  (global hotkey hook: Space/Escape/Delete/arrows/M/Ctrl+F)
-├── Sidebar               (folder import, create collection, category nav, user collections, favorites, settings link, footer)
+├── useKeyboardShortcuts  (global hotkey hook: configurable shortcuts from settings.shortcuts)
+├── Sidebar               (folder import, create collection, category nav, subdirectory tree, user collections, favorites, recently played, settings link, footer)
 ├── SearchBar             (search input, shown when not in batch mode, hidden on settings view)
-├── BatchToolbar          (shown when selectedFileIds.size > 0: select all, batch favorite/delete)
-├── AudioList             (filters audioFiles by activeView + searchQuery, renders AudioCards)
-│   └── AudioCard[]       (React.memo-wrapped, play button, star→CollectionPicker, duration display)
+├── BatchToolbar          (shown when selectedFileIds.size > 0: select all, batch favorite/collection/delete; filters by all view types including subdirectory)
+├── AudioList             (filters audioFiles by activeView + searchQuery, renders AudioCards; sort bar with 4 sort keys; recentlyPlayed view sorted by recency)
+│   └── AudioCard[]       (React.memo-wrapped, play button, star→fav toggle, context menu)
 ├── AudioPlayer           (fixed 256px right panel: vertical layout)
-├── SettingsPage          (shown when activeView.type === 'settings', includes theme toggle + shortcut reference)
+├── SettingsPage          (shown when activeView.type === 'settings', includes theme toggle + shortcut rebinding + author card)
 ├── CollectionPicker      (modal: pick/add to user collections when starring a file)
 └── CreateCollectionDialog (modal: create new user collection, used by Sidebar and CollectionPicker)
 ```
 
 ### Types
 
-- `src/types/index.ts` — `AudioFile`, `Category`, `PlayerState`, `ActiveView`, `AppSettings`, `AppState`
+- `src/types/index.ts` — `AudioFile` (added `subPath`, `customName?`), `Category`, `UserCollection`, `PlayerState`, `ActiveView` (variants: `all`, `favorites`, `recentlyPlayed`, `category`, `collection`, `subdirectory`, `settings`), `AppSettings` (includes `shortcuts: ShortcutConfig`), `ShortcutConfig` (11 keybind fields), `DEFAULT_SHORTCUTS`, `AppState`
 - `src/types/electron.d.ts` — `ElectronAPI` interface and global `Window.electronAPI` declaration
 
 ## Packaging

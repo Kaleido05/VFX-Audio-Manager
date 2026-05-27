@@ -14,6 +14,8 @@ export default function App() {
     player,
     activeView,
     selectedFileIds,
+    playbackRate,
+    sleepTimerEnd,
     importFolder,
     loadFavorites,
     loadAndRestoreFolders,
@@ -91,7 +93,42 @@ export default function App() {
     });
 
     audioManager.on('ended', () => {
-      stopPlayback();
+      const state = useStore.getState();
+      if (state.loopMode === 'one' && state.player.currentFile) {
+        audioManager.play(state.player.currentFile.path);
+        audioManager.setVolume(state.player.volume);
+        useStore.setState((s) => ({
+          player: { ...s.player, isPlaying: true, currentTime: 0, duration: 0 },
+        }));
+      } else {
+        const queue = state.playQueue;
+        if (queue.length > 0) {
+          const [nextId, ...rest] = queue;
+          const nextFile = state.audioFiles.find((f) => f.id === nextId);
+          useStore.setState({ playQueue: rest });
+          if (nextFile) {
+            useStore.setState((s) => ({
+              player: {
+                ...s.player,
+                currentFile: nextFile,
+                isPlaying: true,
+                currentTime: 0,
+                duration: 0,
+              },
+            }));
+          } else {
+            state.playNextInQueue();
+          }
+        } else if (state.loopMode === 'all' && state.player.currentFile) {
+          audioManager.play(state.player.currentFile.path);
+          audioManager.setVolume(state.player.volume);
+          useStore.setState((s) => ({
+            player: { ...s.player, isPlaying: true, currentTime: 0, duration: 0 },
+          }));
+        } else {
+          stopPlayback();
+        }
+      }
     });
 
     audioManager.on('error', (message: string) => {
@@ -105,11 +142,39 @@ export default function App() {
     audioManager.setVolume(player.volume);
   }, [player.volume]);
 
+  // Sync playback rate
+  useEffect(() => {
+    audioManager.setPlaybackRate(playbackRate);
+  }, [playbackRate]);
+
+  // Sleep timer
+  useEffect(() => {
+    if (sleepTimerEnd === null) return;
+    const remaining = Math.max(0, sleepTimerEnd - Date.now());
+    if (remaining <= 0) {
+      audioManager.pause();
+      useStore.setState((s) => ({
+        player: { ...s.player, isPlaying: false },
+        sleepTimerEnd: null,
+      }));
+      return;
+    }
+    const timer = setTimeout(() => {
+      audioManager.pause();
+      useStore.setState((s) => ({
+        player: { ...s.player, isPlaying: false },
+        sleepTimerEnd: null,
+      }));
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [sleepTimerEnd]);
+
   // Sync play state — only start playback when the file changes, not on isPlaying toggle.
   // Pause/resume is handled directly by AudioPlayer / AudioCard via audioManager methods.
   useEffect(() => {
     if (player.currentFile && player.isPlaying) {
       audioManager.play(player.currentFile.path);
+      audioManager.setVolume(player.volume);
     }
   }, [player.currentFile?.id]);
 

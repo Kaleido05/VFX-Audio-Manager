@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { audioManager } from '../services/AudioManager';
-import { HiPlay, HiPause, HiStar, HiCheck } from 'react-icons/hi2';
+import { HiPlay, HiPause, HiStar, HiCheck, HiFolderOpen, HiClipboard, HiPencil, HiTrash, HiXMark, HiQueueList } from 'react-icons/hi2';
 import type { AudioFile } from '../types';
 import CollectionPicker from './CollectionPicker';
 
@@ -10,10 +10,10 @@ interface AudioCardProps {
 }
 
 function formatDuration(seconds: number): string {
-  if (!seconds || seconds <= 0) return '--:--';
+  if (!seconds || seconds <= 0) return '时长：--:--';
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+  return `时长：${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 function formatFileSize(bytes: number): string {
@@ -33,23 +33,30 @@ function getFormatColor(format: string): string {
     m4a: 'bg-rose-500/20 text-rose-400',
     aac: 'bg-cyan-500/20 text-cyan-400',
     wma: 'bg-orange-500/20 text-orange-400',
+    aiff: 'bg-teal-500/20 text-teal-400',
+    aif: 'bg-teal-500/20 text-teal-400',
+    opus: 'bg-pink-500/20 text-pink-400',
+    webm: 'bg-indigo-500/20 text-indigo-400',
+    mka: 'bg-lime-500/20 text-lime-400',
   };
   return colors[format] || 'bg-surface-600 text-surface-400';
 }
 
 const AudioCard = memo(function AudioCard({ file }: AudioCardProps) {
-  const { player, selectedFileIds, toggleFileSelection, playFile, pausePlayback } = useStore();
+  const { player, selectedFileIds, toggleFileSelection, playFile, pausePlayback, renameAudioFile, removeFileFromList, toggleFavoriteQuick, addToPlayQueue } = useStore();
   const [showPicker, setShowPicker] = useState(false);
+  const [contextMenuVisible, setContextMenuVisible] = useState(false);
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
 
   const isCurrentFile = player.currentFile?.id === file.id;
   const isThisPlaying = isCurrentFile && player.isPlaying;
   const isBatchMode = selectedFileIds.size > 0;
   const isSelected = selectedFileIds.has(file.id);
 
-  const handleClick = useCallback(() => {
-    if (isBatchMode) {
-      toggleFileSelection(file.id);
-    } else if (isThisPlaying) {
+  const handlePlay = useCallback(() => {
+    if (isThisPlaying) {
       audioManager.pause();
       pausePlayback();
     } else if (isCurrentFile) {
@@ -60,14 +67,22 @@ const AudioCard = memo(function AudioCard({ file }: AudioCardProps) {
     } else {
       playFile(file);
     }
-  }, [isBatchMode, isThisPlaying, isCurrentFile, toggleFileSelection, file.id, pausePlayback, playFile, file]);
+  }, [isThisPlaying, isCurrentFile, pausePlayback, playFile, file]);
+
+  const handleClick = useCallback(() => {
+    if (isBatchMode) {
+      toggleFileSelection(file.id);
+    } else {
+      handlePlay();
+    }
+  }, [isBatchMode, toggleFileSelection, file.id, handlePlay]);
 
   const handleToggleFavorite = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      setShowPicker(true);
+      toggleFavoriteQuick(file.id);
     },
-    []
+    [file.id, toggleFavoriteQuick]
   );
 
   const handleCheckboxClick = useCallback(
@@ -78,9 +93,35 @@ const AudioCard = memo(function AudioCard({ file }: AudioCardProps) {
     [toggleFileSelection, file.id]
   );
 
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const x = Math.min(e.clientX, window.innerWidth - 176);
+    const y = Math.min(e.clientY, window.innerHeight - 240);
+    setContextMenuPos({ x, y });
+    setContextMenuVisible(true);
+  }, []);
+
+  const startRename = useCallback(() => {
+    setContextMenuVisible(false);
+    setRenameValue(file.customName || file.name.replace(/\.[^.]+$/, ''));
+    setIsRenaming(true);
+  }, [file]);
+
+  const confirmRename = useCallback(() => {
+    const trimmed = renameValue.trim();
+    if (trimmed) {
+      renameAudioFile(file.id, trimmed);
+    }
+    setIsRenaming(false);
+  }, [renameValue, file.id, renameAudioFile]);
+
+  const cancelRename = useCallback(() => {
+    setIsRenaming(false);
+  }, []);
+
   const displayName = useMemo(
-    () => file.name.replace(/\.[^.]+$/, ''),
-    [file.name]
+    () => file.customName || file.name.replace(/\.[^.]+$/, ''),
+    [file.name, file.customName]
   );
 
   return (
@@ -93,6 +134,7 @@ const AudioCard = memo(function AudioCard({ file }: AudioCardProps) {
             : 'border-transparent bg-surface-800/50 hover:bg-surface-800 hover:border-surface-600'
       }`}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
     >
       {/* Batch selection checkbox */}
       <div
@@ -118,17 +160,7 @@ const AudioCard = memo(function AudioCard({ file }: AudioCardProps) {
         aria-label={isThisPlaying ? '暂停' : '播放'}
         onClick={(e) => {
           e.stopPropagation();
-          if (isThisPlaying) {
-            audioManager.pause();
-            pausePlayback();
-          } else if (isCurrentFile) {
-            audioManager.resume();
-            useStore.setState((state) => ({
-              player: { ...state.player, isPlaying: true },
-            }));
-          } else {
-            playFile(file);
-          }
+          handlePlay();
         }}
       >
         {isThisPlaying ? (
@@ -140,12 +172,40 @@ const AudioCard = memo(function AudioCard({ file }: AudioCardProps) {
 
       {/* File info */}
       <div className="min-w-0 flex-1">
-        <p
-          className="truncate text-[13px] font-medium text-primary"
-          title={displayName}
-        >
-          {displayName}
-        </p>
+        {isRenaming ? (
+          <div className="flex items-center gap-1">
+            <input
+              className="min-w-0 flex-1 rounded border border-accent-600 bg-surface-800 px-1.5 py-0.5 text-[13px] text-primary outline-none"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') confirmRename();
+                if (e.key === 'Escape') cancelRename();
+              }}
+              autoFocus
+              onBlur={confirmRename}
+            />
+            <button
+              onClick={confirmRename}
+              className="shrink-0 rounded p-0.5 text-surface-400 hover:text-primary"
+            >
+              <HiCheck className="h-3 w-3" />
+            </button>
+            <button
+              onClick={cancelRename}
+              className="shrink-0 rounded p-0.5 text-surface-400 hover:text-primary"
+            >
+              <HiXMark className="h-3 w-3" />
+            </button>
+          </div>
+        ) : (
+          <p
+            className="truncate text-[13px] font-medium text-primary"
+            title={displayName}
+          >
+            {displayName}
+          </p>
+        )}
         <div className="mt-0.5 flex items-center gap-2">
           <span
             className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${getFormatColor(
@@ -157,12 +217,10 @@ const AudioCard = memo(function AudioCard({ file }: AudioCardProps) {
           <span className="text-[11px] text-surface-500">
             {formatFileSize(file.size)}
           </span>
-          {file.duration > 0 && (
-            <span className="text-[11px] text-surface-500">
-              {formatDuration(file.duration)}
-            </span>
-          )}
         </div>
+        <p className="mt-0.5 text-[11px] text-surface-500">
+          {formatDuration(file.duration)}
+        </p>
       </div>
 
       {/* Favorite button */}
@@ -187,6 +245,64 @@ const AudioCard = memo(function AudioCard({ file }: AudioCardProps) {
           fileName={displayName}
           onClose={() => setShowPicker(false)}
         />
+      )}
+
+      {/* Context menu */}
+      {contextMenuVisible && (
+        <>
+          <div
+            className="fixed inset-0 z-50"
+            onClick={(e) => { e.stopPropagation(); setContextMenuVisible(false); }}
+          />
+          <div
+            className="fixed z-50 w-40 rounded-lg border border-surface-600 bg-surface-800 py-1 shadow-xl"
+            style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => { setContextMenuVisible(false); handlePlay(); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-surface-300 hover:bg-surface-700 hover:text-primary"
+            >
+              <HiPlay className="h-3 w-3" /> 播放
+            </button>
+            <button
+              onClick={() => { setContextMenuVisible(false); addToPlayQueue(file.id); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-surface-300 hover:bg-surface-700 hover:text-primary"
+            >
+              <HiQueueList className="h-3 w-3" /> 添加到播放队列
+            </button>
+            <button
+              onClick={() => { setContextMenuVisible(false); setShowPicker(true); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-surface-300 hover:bg-surface-700 hover:text-primary"
+            >
+              <HiStar className="h-3 w-3" /> 添加到收藏夹
+            </button>
+            <button
+              onClick={() => { setContextMenuVisible(false); window.electronAPI.showItemInFolder(file.path); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-surface-300 hover:bg-surface-700 hover:text-primary"
+            >
+              <HiFolderOpen className="h-3 w-3" /> 在资源管理器打开
+            </button>
+            <button
+              onClick={() => { setContextMenuVisible(false); window.electronAPI.copyToClipboard(file.path); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-surface-300 hover:bg-surface-700 hover:text-primary"
+            >
+              <HiClipboard className="h-3 w-3" /> 复制路径
+            </button>
+            <button
+              onClick={startRename}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-surface-300 hover:bg-surface-700 hover:text-primary"
+            >
+              <HiPencil className="h-3 w-3" /> 重命名
+            </button>
+            <button
+              onClick={() => { setContextMenuVisible(false); removeFileFromList(file.id); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:bg-surface-700 hover:text-red-300"
+            >
+              <HiTrash className="h-3 w-3" /> 从列表移除
+            </button>
+          </div>
+        </>
       )}
 
       {/* Playing indicator */}

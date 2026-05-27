@@ -19,6 +19,8 @@ export interface AudioFile {
   isFavorite: boolean;
   categoryId: string;
   collectionIds: string[];
+  subPath: string;
+  customName?: string;
 }
 
 export interface PlayerState {
@@ -32,13 +34,55 @@ export interface PlayerState {
 export type ActiveView =
   | { type: 'all' }
   | { type: 'favorites' }
+  | { type: 'recentlyPlayed' }
   | { type: 'category'; categoryId: string }
   | { type: 'collection'; collectionId: string }
+  | { type: 'subdirectory'; categoryId: string; subPath: string }
   | { type: 'settings' };
+
+export interface ShortcutConfig {
+  playPause: string;
+  deselect: string;
+  delete: string;
+  selectAll: string;
+  focusSearch: string;
+  seekBack: string;
+  seekForward: string;
+  volumeUp: string;
+  volumeDown: string;
+  toggleMute: string;
+  queueNext: string;
+}
+
+export const DEFAULT_SHORTCUTS: ShortcutConfig = {
+  playPause: 'Space',
+  deselect: 'Escape',
+  delete: 'Delete',
+  selectAll: 'Ctrl+A',
+  focusSearch: 'Ctrl+F',
+  seekBack: 'ArrowLeft',
+  seekForward: 'ArrowRight',
+  volumeUp: 'ArrowUp',
+  volumeDown: 'ArrowDown',
+  toggleMute: 'KeyM',
+  queueNext: 'Ctrl+Q',
+};
+
+export type SortKey = 'name' | 'size' | 'duration' | 'format';
+
+export const SORT_LABELS: Record<SortKey, string> = {
+  name: '名称',
+  size: '文件大小',
+  duration: '时长',
+  format: '格式',
+};
 
 export interface AppSettings {
   defaultVolume: number;
   theme: 'dark' | 'light';
+  shortcuts: ShortcutConfig;
+  sortKey: SortKey;
+  sortAsc: boolean;
 }
 
 export interface AppState {
@@ -47,8 +91,12 @@ export interface AppState {
   categories: Category[];
   userCollections: UserCollection[];
   collectionFiles: Record<string, string[]>; // collectionId → fileId[]
-  importFolders: string[];
   selectedFileIds: Set<string>;
+  recentlyPlayedIds: string[]; // most recent first, max 20
+  playQueue: string[];          // queued file IDs
+  loopMode: 'off' | 'one' | 'all';
+  playbackRate: number;         // 0.5 ~ 2.0
+  sleepTimerEnd: number | null; // Date.now() + ms
 
   // Player
   player: PlayerState;
@@ -58,6 +106,8 @@ export interface AppState {
   activeView: ActiveView;
   isLoading: boolean;
   error: string | null;
+  sortKey: SortKey;
+  sortAsc: boolean;
 
   // Settings
   settings: AppSettings;
@@ -71,7 +121,7 @@ export interface AppState {
   removeCategory: (categoryId: string) => Promise<void>;
 
   // Actions - favorites
-  toggleFavorite: (fileId: string) => Promise<void>;
+  toggleFavoriteQuick: (fileId: string) => Promise<void>;
   loadFavorites: () => Promise<void>;
 
   // Actions - user collections
@@ -94,8 +144,24 @@ export interface AppState {
   batchToggleFavorite: (makeFavorite: boolean) => Promise<void>;
   batchDeleteFiles: () => void;
 
+  // Actions - individual file operations
+  renameAudioFile: (fileId: string, newName: string) => void;
+  removeFileFromList: (fileId: string) => void;
+
+  // Actions - play queue
+  addToPlayQueue: (fileId: string) => void;
+  removeFromPlayQueue: (index: number) => void;
+  clearPlayQueue: () => void;
+  playNextInQueue: () => void;
+
+  // Actions - playback controls
+  setLoopMode: (mode: 'off' | 'one' | 'all') => void;
+  setPlaybackRate: (rate: number) => void;
+  setSleepTimer: (minutes: number | null) => void;
+
   // Actions - player
   playFile: (file: AudioFile) => void;
+  addToRecentlyPlayed: (fileId: string) => void;
   pausePlayback: () => void;
   stopPlayback: () => void;
   seekTo: (time: number) => void;
@@ -105,6 +171,5 @@ export interface AppState {
   // Actions - UI
   setSearchQuery: (query: string) => void;
   setActiveView: (view: ActiveView) => void;
-  setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
+  setSort: (key: SortKey, asc: boolean) => void;
 }

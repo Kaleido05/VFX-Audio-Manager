@@ -104,6 +104,15 @@ class AudioManager {
   }
 
   /**
+   * 设置播放速度 (0.5 ~ 2.0).
+   */
+  setPlaybackRate(rate: number): void {
+    if (this.audio) {
+      this.audio.playbackRate = Math.max(0.5, Math.min(2.0, rate));
+    }
+  }
+
+  /**
    * 获取当前播放的音频路径。
    */
   getCurrentPath(): string | null {
