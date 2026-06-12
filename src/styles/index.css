@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Theme CSS variables */
+:root {
+  --surface-50: 240 242 245;
+  --surface-100: 225 229 235;
+  --surface-200: 196 202 213;
+  --surface-300: 166 176 191;
+  --surface-400: 137 150 169;
+  --surface-500: 107 124 147;
+  --surface-600: 86 99 118;
+  --surface-700: 64 74 88;
+  --surface-800: 43 49 59;
+  --surface-900: 21 25 29;
+  --surface-950: 13 15 18;
+  --text-primary: 255 255 255;
+  --scrollbar-thumb: 64 74 88;
+  --scrollbar-thumb-hover: 86 99 118;
+  --range-track: 64 74 88;
+}
+
+html.light {
+  --surface-50: 15 23 42;
+  --surface-100: 30 41 59;
+  --surface-200: 51 65 85;
+  --surface-300: 71 85 105;
+  --surface-400: 100 116 139;
+  --surface-500: 148 163 184;
+  --surface-600: 203 213 225;
+  --surface-700: 226 232 240;
+  --surface-800: 241 245 249;
+  --surface-900: 248 250 252;
+  --surface-950: 255 255 255;
+  --text-primary: 15 23 42;
+  --scrollbar-thumb: 203 213 225;
+  --scrollbar-thumb-hover: 148 163 184;
+  --range-track: 226 232 240;
+}
+
+/* Base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: rgb(var(--surface-950));
+  color: rgb(var(--text-primary));
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--scrollbar-thumb));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--scrollbar-thumb-hover));
+}
+
+/* Audio player range input styling */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: rgb(var(--range-track));
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #2e6eff;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+input[type='range']::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* Selection */
+::selection {
+  background-color: rgba(46, 110, 255, 0.3);
+  color: #fff;
+}
+
+/* Focus ring */
+*:focus-visible {
+  outline: 2px solid #2e6eff;
+  outline-offset: 2px;
+}
+
+/* Drag and drop highlight */
+body.drag-over::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  border: 2px dashed #2e6eff;
+  background-color: rgba(46, 110, 255, 0.04);
+}
+
+/* Transition utility */
+.transition-fast {
+  transition: all 0.15s ease;
+}
+
+.transition-normal {
+  transition: all 0.25s ease;
+}
