@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+release/
+
+# Claude Code local settings
+.claude/
+
+# Reasonix editor metadata
+.reasonix/
+
+# Codegraph tool metadata
+.codegraph/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
